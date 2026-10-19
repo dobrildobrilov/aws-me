@@ -343,12 +343,31 @@ aws-me() {
 	}
 account=$(jq -er '.Account' <<< "$identity") || return 1
 arn=$(jq -er '.Arn' <<< "$identity") || return 1
-unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN \
-	AWS_SECURITY_TOKEN AWS_SESSION_EXPIRATION AWS_DEFAULT_PROFILE \
-	AWS_DEFAULT_REGION AWS_REGION
-export AWS_PROFILE="$profile"
-printf 'AWS profile: %s\nAccount: %s\nIdentity: %s\n' "$profile" "$account" "$arn"
-_aws_me_remaining "$profile"
+local credentials
+
+# Export temporary credentials for AWS SDK-based tools (CDK, etc.).
+credentials=$(
+	_aws_me_clean_env aws configure export-credentials \
+		--profile "$profile" --format env
+	) || {
+		echo 'Failed to export AWS credentials; current shell profile unchanged.' >&2
+			return 1
+	}
+
+	# Clear credentials from the previously selected profile.
+	unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN \
+		AWS_SECURITY_TOKEN AWS_SESSION_EXPIRATION AWS_DEFAULT_PROFILE \
+		AWS_DEFAULT_REGION AWS_REGION
+
+	export AWS_PROFILE="$profile"
+
+	# Apply credentials to the current shell.
+	eval "$credentials"
+
+	printf 'AWS profile: %s\nAccount: %s\nIdentity: %s\n' \
+		"$profile" "$account" "$arn"
+
+	_aws_me_remaining "$profile"
 }
 
 _aws_me_active_profiles() {
